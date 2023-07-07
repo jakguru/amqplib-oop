@@ -21,6 +21,7 @@
   ],
   "author": "Jak Guru <jak@jak.guru>",
   "license": "MIT",
+  "repository": "github:jakguru/amqplib-oop",
   "dependencies": {
     "amqplib": "^0.10.3",
     "eventemitter2": "^6.4.9"

@@ -13,6 +13,10 @@
   "hideGenerator": true,
   "includeVersion": true,
   "searchInComments": true,
+  "sourceLinkTemplate": "https://github.com/jakguru/amqplib-oop/blob/{gitRevision}/{path}#L{line}",
+  "sidebarLinks": {
+    "Github Repository": "https://github.com/jakguru/amqplib-oop",
+  },
   "validation": {
     "notExported": true,
     "invalidLink": true,
