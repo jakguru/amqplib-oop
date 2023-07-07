@@ -3,6 +3,8 @@
 This is a simple wrapper around the [amqplib](https://www.npmjs.com/package/amqplib) library to make it easier to use in an object-oriented way.
 Available for use in both TypeScript and JavaScript (CommonJS).
 
+For more information, view the [documentation](https://jakguru.github.io/amqplib-oop/).
+
 ## Installation
 
 ```bash
