@@ -1,0 +1,31 @@
+{
+  "entryPoints": ["api.ts"],
+  "out": "docs",
+  "plugin": ["typedoc-plugin-coverage"],
+  "coverageLabel": "Covers",
+  "excludeExternals": true,
+  "excludePrivate": true,
+  "excludeProtected": true,
+  "excludeInternal": true,
+  "name": "@jakguru/amqplib-oop",
+  "readme": "readme.docs.md",
+  "theme": "default",
+  "hideGenerator": true,
+  "includeVersion": true,
+  "searchInComments": true,
+  "validation": {
+    "notExported": true,
+    "invalidLink": true,
+    "notDocumented": true
+  },
+  "externalSymbolLinkMappings": {
+    "typescript": {
+      "defaultMaxListeners": "https://nodejs.org/api/events.html#events_emitter_defaultmaxlisteners",
+      "Promise": "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise"
+    },
+    "amqplib": {
+      "Channel": "https://amqp-node.github.io/amqplib/channel_api.html#channel",
+      "ConfirmChannel": "https://amqp-node.github.io/amqplib/channel_api.html#confirmchannel"
+    }
+  }
+}

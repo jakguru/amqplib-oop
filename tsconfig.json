@@ -1,0 +1,17 @@
+{
+  "extends": "adonis-preset-ts/tsconfig.json",
+  "include": ["**/*"],
+  "exclude": ["node_modules", "dist", "docs"],
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./",
+    "sourceMap": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "removeComments": false
+  },
+  "ts-node": {
+    "transpileOnly": true
+  }
+}
