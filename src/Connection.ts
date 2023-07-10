@@ -331,6 +331,7 @@ export class Connection {
  * Checks the status of all queues associated with the connection.
  * @returns A `Promise` that resolves to an object containing the name of each queue and its status.
  * @throws An error if the connection is not established or if any of the queues cannot be checked.
+ * @since 1.0.4
  */
   public async check(): Promise<ConnectionCheckResponse> {
     await this.#connection
