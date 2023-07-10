@@ -54,10 +54,10 @@ const testQueue2 = client.getQueue('test-queue-2')
 
 ```typescript
 testQueue.listen((message, ack, nack) => {
-    // Do something with the message
-    // if successful: ack
-    // if failed and you want to requeue: nack()
-    // if failed but you don't want to requeue: nack(false)
+  // Do something with the message
+  // if successful: ack
+  // if failed and you want to requeue: nack()
+  // if failed but you don't want to requeue: nack(false)
 })
 ```
 
@@ -69,6 +69,6 @@ await testQueue.enqueue(Buffer.from('Hello World!'))
 
 ## TODO Eventually
 
--   [ ] Add more test cases
--   [ ] Add more documentation & examples
--   [ ] Add "Exchange" functionality
+- [ ] Add more test cases
+- [ ] Add more documentation & examples
+- [ ] Add "Exchange" functionality

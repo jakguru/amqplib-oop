@@ -1,9 +1,9 @@
 import { test } from '@japa/runner'
+import type { ConnectionConstructorOptions } from '../src/Connection'
 import { Connection } from '../src/Connection'
 import { Queue } from '../src/Queue'
-import type { ConnectionConstructorOptions } from '../types/Connection'
 
-test.group('Queue', (group) => {
+test.group('source.Queue', (group) => {
   group.teardown(async () => {
     const connection = new Connection(options)
     const queue = await connection.getQueue('test', {

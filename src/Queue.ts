@@ -1,30 +1,8 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
-
-/**
- * Importing necessary types and classes for Queue.
- * @typedef {import('../types/Queue').ConnectionChannel} ConnectionChannel
- * @typedef {import('../types/Queue').GetMessagesOptions} GetMessagesOptions
- * @typedef {import('../types/Queue').QueueAssertionOptions} QueueAssertionOptions
- * @typedef {import('../types/Queue').QueueEnqueueOptions} QueueEnqueueOptions
- * @typedef {import('../types/Queue').QueueListeningOptions} QueueListeningOptions
- * @typedef {import('../types/Queue').QueueMessage} QueueMessage
- * @typedef {import('../types/Queue').QueueMessageListener} QueueMessageListener
- * @typedef {import('../types/Queue').TickMessage} TickMessage
- * @typedef {import('../types/Queue').QueueInstrumentors} QueueInstrumentors
- * @typedef {import('./Connection').Connection} Connection
- */
-import type {
-  ConnectionChannel,
-  GetMessagesOptions,
-  QueueEnqueueOptions,
-  QueueInstrumentors,
-  QueueListeningOptions,
-  QueueMessage,
-  QueueMessageListener,
-  TickMessage,
-} from '../types/Queue'
 import type { Connection } from './Connection'
+import type { Instrumentor } from './Instrumentation'
+export type { Channel, ConfirmChannel } from 'amqplib'
 
 import ConnectionError from './Errors/ConnectionError'
 import QueueError from './Errors/QueueError'
@@ -285,17 +263,19 @@ export class Queue {
   /**
    * Registers an event listener for the 'error' event.
    * @param {string} event - The name of the event to listen for ('error').
-   * @param {(err: Error) => Promise<void> | void} listener - The function to invoke when the 'error' event is emitted.
+   * @param {QueueErrorEventListener} listener - The function to invoke when the 'error' event is emitted.
    * @returns {void}
    */
-  public $on(event: 'error', listener: (err: Error) => Promise<void> | void): void
+  public $on(event: 'error', listener: QueueErrorEventListener): void
+
   /**
    * Registers an event listener for the 'deleted' event.
    * @param {string} event - The name of the event to listen for ('deleted').
-   * @param {() => Promise<void> | void} listener - The function to invoke when the 'deleted' event is emitted.
+   * @param {QueueDeletedEventListener} listener - The function to invoke when the 'deleted' event is emitted.
    * @returns {void}
    */
-  public $on(event: 'deleted', listener: () => Promise<void> | void): void
+  public $on(event: 'deleted', listener: QueueDeletedEventListener): void
+
   /**
    * Registers an event listener for the 'message' event.
    * @param {string} event - The name of the event to listen for ('message').
@@ -303,13 +283,14 @@ export class Queue {
    * @returns {void}
    */
   public $on(event: 'message', listener: QueueMessageListener): void
+
   /**
    * Registers an event listener for the specified event.
    * @param {string} event - The name of the event to listen for.
-   * @param {(...args: any[]) => Promise<void>} listener - The function to invoke when the event is emitted.
+   * @param {QueueGenericEventListener} listener - The function to invoke when the event is emitted.
    * @returns {void}
    */
-  public $on(event: string, listener: (...args: any[]) => Promise<void>): void {
+  public $on(event: string, listener: QueueGenericEventListener): void {
     if ('message' === event) {
       this.#bus.on(
         'message',
@@ -323,17 +304,17 @@ export class Queue {
   /**
    * Removes the specified event listener for the 'error' event.
    * @param {string} event - The name of the event to remove the listener from ('error').
-   * @param {(err: Error) => Promise<void> | void} listener - The function to remove as a listener for the 'error' event.
+   * @param {QueueErrorEventListener} listener - The function to remove as a listener for the 'error' event.
    * @returns {void}
    */
-  public $off(event: 'error', listener: (err: Error) => Promise<void> | void): void
+  public $off(event: 'error', listener: QueueErrorEventListener): void
   /**
    * Removes the specified event listener for the 'deleted' event.
    * @param {string} event - The name of the event to remove the listener from ('deleted').
-   * @param {() => Promise<void> | void} listener - The function to remove as a listener for the 'deleted' event.
+   * @param {QueueDeletedEventListener} listener - The function to remove as a listener for the 'deleted' event.
    * @returns {void}
    */
-  public $off(event: 'deleted', listener: () => Promise<void> | void): void
+  public $off(event: 'deleted', listener: QueueDeletedEventListener): void
   /**
    * Removes the specified event listener for the 'message' event.
    * @param {string} event - The name of the event to remove the listener from ('message').
@@ -344,10 +325,10 @@ export class Queue {
   /**
    * Removes the specified event listener for the given event.
    * @param {string} event - The name of the event to remove the listener from.
-   * @param {(...args: any[]) => Promise<void>} listener - The function to remove as a listener for the event.
+   * @param {QueueGenericEventListener} listener - The function to remove as a listener for the event.
    * @returns {void}
    */
-  public $off(event: string, listener: (...args: any[]) => Promise<void>): void {
+  public $off(event: string, listener: QueueGenericEventListener): void {
     if ('message' === event) {
       this.#bus.off(
         'message',
@@ -362,18 +343,18 @@ export class Queue {
    * Registers a one-time event listener for the 'error' event.
    * The listener will be invoked at most once for the event, and then removed.
    * @param {string} event - The name of the event to listen for ('error').
-   * @param {(err: Error) => Promise<void> | void} listener - The function to invoke when the 'error' event is emitted.
+   * @param {QueueErrorEventListener} listener - The function to invoke when the 'error' event is emitted.
    * @returns {void}
    */
-  public $once(event: 'error', listener: (err: Error) => Promise<void> | void): void
+  public $once(event: 'error', listener: QueueErrorEventListener): void
   /**
    * Registers a one-time event listener for the 'deleted' event.
    * The listener will be invoked at most once for the event, and then removed.
    * @param {string} event - The name of the event to listen for ('deleted').
-   * @param {() => Promise<void> | void} listener - The function to invoke when the 'deleted' event is emitted.
+   * @param {QueueDeletedEventListener} listener - The function to invoke when the 'deleted' event is emitted.
    * @returns {void}
    */
-  public $once(event: 'deleted', listener: () => Promise<void> | void): void
+  public $once(event: 'deleted', listener: QueueDeletedEventListener): void
   /**
    * Registers a one-time event listener for the 'message' event.
    * The listener will be invoked at most once for the event, and then removed.
@@ -386,10 +367,10 @@ export class Queue {
    * Registers a one-time event listener for the specified event.
    * The listener will be invoked at most once for the event, and then removed.
    * @param {string} event - The name of the event to listen for.
-   * @param {(...args: any[]) => Promise<void>} listener - The function to invoke when the event is emitted.
+   * @param {QueueGenericEventListener} listener - The function to invoke when the event is emitted.
    * @returns {void}
    */
-  public $once(event: string, listener: (...args: any[]) => Promise<void>): void {
+  public $once(event: string, listener: QueueGenericEventListener): void {
     if ('message' === event) {
       this.#bus.once(
         'message',
@@ -529,3 +510,455 @@ export class Queue {
     await Promise.all(promises)
   }
 }
+
+/**
+ * A type alias for a channel that can be either a regular `amqplib.Channel` or a `amqplib.ConfirmChannel`.
+ * @interface
+ */
+export type ConnectionChannel = amqplib.Channel | amqplib.ConfirmChannel
+
+/**
+ * Options for enqueuing a message to a queue.
+ */
+/**
+ * Options for enqueuing a message to a queue.
+ * @interface
+ * @extends {amqplib.Options.Publish}
+ */
+export interface QueueEnqueueOptions extends amqplib.Options.Publish {
+  /**
+   * The time in milliseconds after which the message will expire.
+   */
+  expiration?: string | number | undefined
+  /**
+   * The user ID of the message sender.
+   */
+  userId?: string | undefined
+  /**
+   * The CC (carbon copy) address(es) for the message.
+   */
+  CC?: string | string[] | undefined
+  /**
+   * Whether the message is mandatory.
+   */
+  mandatory?: boolean | undefined
+  /**
+   * Whether the message should be persisted.
+   */
+  persistent?: boolean | undefined
+  /**
+   * The delivery mode of the message.
+   */
+  deliveryMode?: boolean | number | undefined
+  /**
+   * The BCC (blind carbon copy) address(es) for the message.
+   */
+  BCC?: string | string[] | undefined
+  /**
+   * The content type of the message.
+   */
+  contentType?: string | undefined
+  /**
+   * The content encoding of the message.
+   */
+  contentEncoding?: string | undefined
+  /**
+   * The headers of the message.
+   */
+  headers?: any
+  /**
+   * The priority of the message.
+   */
+  priority?: number | undefined
+  /**
+   * The correlation ID of the message.
+   */
+  correlationId?: string | undefined
+  /**
+   * The reply-to address for the message.
+   */
+  replyTo?: string | undefined
+  /**
+   * The message ID.
+   */
+  messageId?: string | undefined
+  /**
+   * The timestamp of the message.
+   */
+  timestamp?: number | undefined
+  /**
+   * The type of the message.
+   */
+  type?: string | undefined
+  /**
+   * The application ID of the message.
+   */
+  appId?: string | undefined
+}
+
+/**
+ * A message fetched from the queue
+ */
+/**
+ * A message fetched from the queue, with additional fields for message count, delivery tag, redelivery status, exchange, and routing key.
+ * @interface
+ * @extends {amqplib.GetMessage}
+ */
+export interface QueueMessage extends amqplib.GetMessage {
+  /**
+   * The content of the message as a Buffer.
+   */
+  content: Buffer
+  /**
+   * An object containing additional fields for message count, delivery tag, redelivery status, exchange, and routing key.
+   */
+  fields: {
+    /**
+     * The number of messages in the queue.
+     */
+    messageCount: number
+    /**
+     * The delivery tag of the message.
+     */
+    deliveryTag: number
+    /**
+     * Whether the message has been redelivered.
+     */
+    redelivered: boolean
+    /**
+     * The exchange the message was published to.
+     */
+    exchange: string
+    /**
+     * The routing key used to publish the message.
+     */
+    routingKey: string
+  }
+
+  /**
+   * An object containing additional properties for the message.
+   */
+  properties: {
+    /**
+     * The content type of the message.
+     */
+    contentType: any | undefined
+    /**
+     * The content encoding of the message.
+     */
+    contentEncoding: any | undefined
+    /**
+     * The headers of the message.
+     */
+    headers: {
+      /**
+       * The number of times the message has been redelivered.
+       */
+      'x-first-death-exchange'?: string | undefined
+      /**
+       * The exchange the message was published to.
+       */
+      'x-first-death-queue'?: string | undefined
+      /**
+       * The routing key used to publish the message.
+       */
+      'x-first-death-reason'?: string | undefined
+      /**
+       * The time the message was first published.
+       */
+      'x-death'?: XDeath[] | undefined
+      [key: string]: any
+    }
+    /**
+     * The delivery mode of the message.
+     */
+    deliveryMode: any | undefined
+    /**
+     * The priority of the message.
+     */
+    priority: any | undefined
+    /**
+     * The correlation ID of the message.
+     */
+    correlationId: any | undefined
+    /**
+     * The reply-to address for the message.
+     */
+    replyTo: any | undefined
+    /**
+     * The expiration time of the message.
+     */
+    expiration: any | undefined
+    /**
+     * The message ID.
+     */
+    messageId: any | undefined
+    /**
+     * The timestamp of the message.
+     */
+    timestamp: any | undefined
+    /**
+     * The type of the message.
+     */
+    type: any | undefined
+    /**
+     * The user ID of the message sender.
+     */
+    userId: any | undefined
+    /**
+     * The application ID of the message.
+     */
+    appId: any | undefined
+    /**
+     * The cluster ID of the message.
+     */
+    clusterId: any | undefined
+  }
+}
+
+/**
+ * Options for getting messages from a queue.
+ */
+/**
+ * Options for getting messages from a queue.
+ * @interface
+ * @extends {amqplib.Options.Get}
+ */
+export interface GetMessagesOptions extends amqplib.Options.Get {
+  /**
+   * Whether to automatically acknowledge the message upon retrieval.
+   */
+  noAck?: boolean | undefined
+}
+
+/**
+ * A function that acknowledges the successful processing of a message from a queue.
+ * @interface
+ */
+export interface QueueSuccessAcknowledgement extends Function {
+  /**
+   * Acknowledges the successful processing of a message from a queue.
+   * @param allUpTo - If `true`, acknowledges all messages up to and including the current message.
+   */
+  (allUpTo?: boolean): void
+}
+
+/**
+ * A function that negatively acknowledges the processing of a message from a queue.
+ * @interface
+ * @extends {QueueSuccessAcknowledgement}
+ */
+export interface QueueFailureAcknowledgement extends QueueSuccessAcknowledgement {
+  /**
+   * Negatively acknowledges the processing of a message from a queue.
+   * @param requeue - If `true`, requeues the message.
+   * @param allUpTo - If `true`, negatively acknowledges all messages up to and including the current message.
+   */
+  (requeue?: boolean, allUpTo?: boolean): void
+}
+
+/**
+ * A function that listens for messages from a queue and processes them.
+ * @interface
+ */
+export interface QueueMessageListener {
+  /**
+   * Processes a message from a queue.
+   * @param message - The message to be processed.
+   * @param ack - A function that acknowledges the successful processing of the message.
+   * @param nack - A function that negatively acknowledges the processing of the message.
+   */
+  (
+    message: QueueMessage,
+    ack: QueueSuccessAcknowledgement,
+    nack: QueueFailureAcknowledgement
+  ): Promise<void> | void
+}
+
+/**
+ * Options for listening to messages from a queue.
+ * @interface
+ */
+export interface QueueListeningOptions {
+  /**
+   * Whether to block the event loop while waiting for messages.
+   */
+  blocking: boolean
+  /**
+   * Whether to positivly acknowledge messages that were not acknowledged by the listener.
+   */
+  ackOnNoAck: boolean
+  /**
+   * Whether to negatively acknowledge messages that were not acknowledged by the listener.
+   */
+  nackOnNoAck: boolean
+  /**
+   * Whether to requeue messages that caused an error during processing.
+   */
+  requeueOnError: boolean
+  /**
+   * When `nackOnNoAck` is `true`, whether to requeue messages that were not acknowledged by the listener.
+   */
+  requeueOnNoAck: boolean
+  /**
+   * Whether the message will be assumed by the server to be acknowledged immediately (i.e. dequeued) after delivery.
+   */
+  noAck: boolean
+}
+
+/**
+ * An object representing a message fetched from a queue, along with the functions to acknowledge or negatively acknowledge its processing.
+ * @interface
+ */
+export interface TickMessage {
+  /**
+   * The message fetched from the queue.
+   */
+  message: QueueMessage
+  /**
+   * A function that acknowledges the successful processing of the message.
+   */
+  ack: QueueSuccessAcknowledgement
+  /**
+   * A function that negatively acknowledges the processing of the message.
+   */
+  nack: QueueFailureAcknowledgement
+}
+
+/**
+ * An object containing instrumentors for various queue operations.
+ * @interface
+ */
+export interface QueueInstrumentors {
+  /**
+   * An instrumentor for pre-shutdown operations.
+   */
+  preShutDown: Instrumentor
+  /**
+   * An instrumentor for shutdown operations.
+   */
+  shutdown: Instrumentor
+  /**
+   * An instrumentor for check operations.
+   */
+  check: Instrumentor
+  /**
+   * An instrumentor for delete operations.
+   */
+  delete: Instrumentor
+  /**
+   * An instrumentor for purge operations.
+   */
+  purge: Instrumentor
+  /**
+   * An instrumentor for enqueue operations.
+   */
+  enqueue: Instrumentor
+  /**
+   * An instrumentor for acknowledge operations.
+   */
+  ack: Instrumentor
+  /**
+   * An instrumentor for negative acknowledge operations.
+   */
+  nack: Instrumentor
+  /**
+   * An instrumentor for get operations.
+   */
+  get: Instrumentor
+  /**
+   * An instrumentor for listen operations.
+   */
+  listen: Instrumentor
+  /**
+   * An instrumentor for pause operations.
+   */
+  pause: Instrumentor
+  /**
+   * An instrumentor for event listener operations.
+   */
+  eventListener: Instrumentor
+  /**
+   * An instrumentor for event emitter operations.
+   */
+  eventEmitter: Instrumentor
+  /**
+   * An instrumentor for message listener operations.
+   */
+  messageListener: Instrumentor
+  /**
+   * An instrumentor for tick operations.
+   */
+  tick: Instrumentor
+  /**
+   * An instrumentor for consumer operations.
+   */
+  consumer: Instrumentor
+}
+
+/**
+ * An object representing the dead-letter information of a message.
+ * @interface
+ */
+export interface XDeath {
+  /**
+   * The number of times the message has been rejected or expired.
+   */
+  'count': number
+  /**
+   * The reason for the message being dead-lettered.
+   */
+  'reason': 'rejected' | 'expired' | 'maxlen'
+  /**
+   * The name of the queue where the message was dead-lettered.
+   */
+  'queue': string
+  /**
+   * The timestamp of when the message was dead-lettered.
+   */
+  'time': {
+    /**
+     * The type of the timestamp.
+     */
+    '!': 'timestamp'
+    /**
+     * The value of the timestamp.
+     */
+    'value': number
+  }
+  /**
+   * The name of the exchange where the message was dead-lettered.
+   */
+  'exchange': string
+  /**
+   * The original expiration time of the message.
+   */
+  'original-expiration'?: any
+  /**
+   * The routing keys of the message.
+   */
+  'routing-keys': string[]
+}
+
+/**
+ * Type for error event listener.
+ * @callback QueueErrorEventListener
+ * @param {Error} err - The error object.
+ * @returns {Promise<void> | void}
+ */
+export type QueueErrorEventListener = (err: Error) => Promise<void> | void
+
+/**
+ * Type for deleted event listener.
+ * @callback QueueDeletedEventListener
+ * @returns {Promise<void> | void}
+ */
+export type QueueDeletedEventListener = () => Promise<void> | void
+
+/**
+ * Type for generic event listener.
+ * @callback QueueGenericEventListener
+ * @param {...any[]} args - The arguments.
+ * @returns {Promise<void>}
+ */
+export type QueueGenericEventListener = (...args: any[]) => Promise<void>

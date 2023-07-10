@@ -1,8 +1,7 @@
 import { Connection } from './src/Connection'
-export type { Queue } from './src/Queue'
-export type * from './types/Connection'
-export type * from './types/Instrumentation'
-export type * from './types/Queue'
+export type * from './src/Connection'
+export type * from './src/Instrumentation'
+export type * from './src/Queue'
 /**
  * Exports the Connection class.
  */

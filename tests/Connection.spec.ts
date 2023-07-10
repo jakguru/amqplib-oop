@@ -1,9 +1,9 @@
 import { test } from '@japa/runner'
+import type { ConnectionConstructorOptions } from '../src/Connection'
 import { Connection } from '../src/Connection'
 import { Queue } from '../src/Queue'
-import type { ConnectionConstructorOptions } from '../types/Connection'
 
-test.group('Connection', () => {
+test.group('build.Connection', () => {
   const options: Partial<ConnectionConstructorOptions> = {
     protocol: process.env.PROTOCOL,
     hostname: process.env.HOSTNAME,

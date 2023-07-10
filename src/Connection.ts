@@ -1,24 +1,8 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
-
-/**
- * Imports the necessary types and classes for the Connection class.
- * @typedef {import('../types/Connection').ConnectionConstructorOptions} ConnectionConstructorOptions
- * @typedef {import('../types/Connection').ConnectionGetQueueOptions} ConnectionGetQueueOptions
- * @typedef {import('../types/Connection').QueueAssertionOptions} QueueAssertionOptions
- * @typedef {import('./Queue').Queue} Queue
- * @typedef {import('../types/Connection').ConnectionInstrumentors} ConnectionInstrumentors
- */
-import type {
-  ConnectionConstructorOptions,
-  ConnectionGetQueueOptions,
-  ConnectionInstrumentors,
-  QueueAssertionOptions,
-} from '../types/Connection'
-
+import type { Instrumentor } from './Instrumentation'
+import type { ConnectionChannel, QueueInstrumentors } from './Queue'
 import { Queue } from './Queue'
-
-import type { ConnectionChannel, QueueInstrumentors } from '../types/Queue'
 
 /**
  * @class Connection
@@ -165,21 +149,21 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'connected', listener: () => void | Promise<void>): void
+  public $on(event: 'connected', listener: ConnectionEventListener): void
   /**
    * Registers an event listener for the specified event.
    * @param event The name of the event to listen for.
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'error', listener: (error: Error) => void | Promise<void>): void
+  public $on(event: 'error', listener: ConnectionErrorEventListener): void
   /**
    * Registers an event listener for the 'close' event.
    * @param event The name of the event to listen for.
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'close', listener: (error?: Error) => void | Promise<void>): void
+  public $on(event: 'close', listener: ConnectionCloseEventListener): void
   /**
    * Registers an event listener for the 'blocked' event.
    * This event is emitted when the connection is blocked due to a flow control mechanism.
@@ -187,7 +171,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'blocked', listener: () => void | Promise<void>): void
+  public $on(event: 'blocked', listener: ConnectionEventListener): void
   /**
    * Registers an event listener for the 'unblocked' event.
    * This event is emitted when the connection is unblocked after being blocked due to a flow control mechanism.
@@ -195,7 +179,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'unblocked', listener: () => void | Promise<void>): void
+  public $on(event: 'unblocked', listener: ConnectionEventListener): void
   /**
    * Registers an event listener for the 'before:close' event.
    * This event is emitted before the connection is closed.
@@ -203,7 +187,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $on(event: 'before:close', listener: () => void | Promise<void>): void
+  public $on(event: 'before:close', listener: ConnectionEventListener): void
   /**
    * Registers an event listener for the specified event.
    * @param event The name of the event to listen for.
@@ -220,28 +204,28 @@ export class Connection {
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'connected', listener: () => void | Promise<void>): void
+  public $off(event: 'connected', listener: ConnectionEventListener): void
   /**
    * Removes the specified event listener for the 'error' event.
    * @param event The name of the event to remove the listener from.
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'error', listener: (error: Error) => void | Promise<void>): void
+  public $off(event: 'error', listener: ConnectionErrorEventListener): void
   /**
    * Removes the specified event listener for the 'close' event.
    * @param event The name of the event to remove the listener from.
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'close', listener: (error?: Error) => void | Promise<void>): void
+  public $off(event: 'close', listener: ConnectionCloseEventListener): void
   /**
    * Removes the specified event listener for the 'blocked' event.
    * @param event The name of the event to remove the listener from.
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'blocked', listener: () => void | Promise<void>): void
+  public $off(event: 'blocked', listener: ConnectionEventListener): void
   /**
    * Removes the specified event listener for the 'unblocked' event.
    * This event is emitted when the connection is unblocked after being blocked due to a flow control mechanism.
@@ -249,7 +233,7 @@ export class Connection {
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'unblocked', listener: () => void | Promise<void>): void
+  public $off(event: 'unblocked', listener: ConnectionEventListener): void
   /**
    * Removes the specified event listener for the 'before:close' event.
    * This event is emitted before the connection is closed.
@@ -257,7 +241,7 @@ export class Connection {
    * @param listener The function to be removed from the event listeners.
    * @returns void
    */
-  public $off(event: 'before:close', listener: () => void | Promise<void>): void
+  public $off(event: 'before:close', listener: ConnectionEventListener): void
   /**
    * Removes the specified event listener for the specified event.
    * @param event The name of the event to remove the listener from.
@@ -275,7 +259,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'connected', listener: () => void | Promise<void>): void
+  public $once(event: 'connected', listener: ConnectionEventListener): void
   /**
    * Registers a one-time event listener for the 'error' event.
    * The listener is automatically removed after it has been called once.
@@ -283,7 +267,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'error', listener: (error: Error) => void | Promise<void>): void
+  public $once(event: 'error', listener: ConnectionErrorEventListener): void
   /**
    * Registers a one-time event listener for the 'close' event.
    * The listener is automatically removed after it has been called once.
@@ -291,7 +275,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'close', listener: (error?: Error) => void | Promise<void>): void
+  public $once(event: 'close', listener: ConnectionCloseEventListener): void
   /**
    * Registers a one-time event listener for the 'blocked' event.
    * The listener is automatically removed after it has been called once.
@@ -299,7 +283,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'blocked', listener: () => void | Promise<void>): void
+  public $once(event: 'blocked', listener: ConnectionEventListener): void
   /**
    * Registers a one-time event listener for the 'unblocked' event.
    * The listener is automatically removed after it has been called once.
@@ -308,7 +292,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'unblocked', listener: () => void | Promise<void>): void
+  public $once(event: 'unblocked', listener: ConnectionEventListener): void
   /**
    * Registers a one-time event listener for the 'before:close' event.
    * This event is emitted before the connection is closed.
@@ -317,7 +301,7 @@ export class Connection {
    * @param listener The function to be called when the event is emitted.
    * @returns void
    */
-  public $once(event: 'before:close', listener: () => void | Promise<void>): void
+  public $once(event: 'before:close', listener: ConnectionEventListener): void
   /**
    * Registers a one-time event listener for the specified event.
    * The listener is automatically removed after it has been called once.
@@ -343,3 +327,227 @@ export class Connection {
     })
   }
 }
+
+/**
+ * Options for creating a new instance of a Connection object.
+ * @remarks
+ * This interface extends the `amqplib.Options.Connect` interface.
+ */
+export interface ConnectionConstructorOptions extends amqplib.Options.Connect {
+  /**
+   * The protocol to use for the connection (e.g. 'amqp' or 'amqps').
+   */
+  protocol?: string | undefined
+  /**
+   * The hostname of the server to connect to.
+   */
+  hostname?: string | undefined
+  /**
+   * The port number to connect to.
+   */
+  port?: number | undefined
+  /**
+   * The username to use for authentication.
+   */
+  username?: string | undefined
+  /**
+   * The password to use for authentication.
+   */
+  password?: string | undefined
+  /**
+   * The locale to use for the connection.
+   */
+  locale?: string | undefined
+  /**
+   * The maximum frame size to use for the connection.
+   */
+  frameMax?: number | undefined
+  /**
+   * The heartbeat interval to use for the connection.
+   */
+  heartbeat?: number | undefined
+  /**
+   * The virtual host to use for the connection.
+   */
+  vhost?: string | undefined
+}
+
+/**
+ * Options for getting a queue from a channel.
+ */
+export interface ConnectionGetQueueOptions extends amqplib.Options.AssertQueue {
+  /**
+   * The type of the queue.
+   */
+  type: 'confirm' | 'basic'
+  /**
+   * Whether the queue should be exclusive to this connection.
+   */
+  exclusive?: boolean | undefined
+
+  /**
+   * Whether the queue should be durable (i.e. survive a broker restart).
+   */
+  durable?: boolean | undefined
+
+  /**
+   * Whether the queue should be automatically deleted when it has no more consumers.
+   */
+  autoDelete?: boolean | undefined
+
+  /**
+   * Additional arguments to pass when creating the queue.
+   */
+  arguments?: any
+
+  /**
+   * The time-to-live (TTL) for messages in the queue.
+   */
+  messageTtl?: number | undefined
+
+  /**
+   * The time in milliseconds after which the queue will be deleted.
+   */
+  expires?: number | undefined
+
+  /**
+   * The exchange to which messages will be sent if they are rejected or expire.
+   */
+  deadLetterExchange?: string | undefined
+
+  /**
+   * The routing key to use when sending messages to the dead letter exchange.
+   */
+  deadLetterRoutingKey?: string | undefined
+
+  /**
+   * The maximum number of messages that the queue can hold.
+   */
+  maxLength?: number | undefined
+
+  /**
+   * The maximum priority value for messages in the queue.
+   */
+  maxPriority?: number | undefined
+}
+
+/**
+ * Options for asserting a queue on a channel.
+ * @remarks
+ * This interface extends the `amqplib.Options.AssertQueue` interface.
+ */
+export interface QueueAssertionOptions extends amqplib.Options.AssertQueue {
+  /**
+   * Whether the queue should be exclusive to this connection.
+   */
+  exclusive?: boolean | undefined
+
+  /**
+   * Whether the queue should be durable (i.e. survive a broker restart).
+   */
+  durable?: boolean | undefined
+
+  /**
+   * Whether the queue should be automatically deleted when it has no more consumers.
+   */
+  autoDelete?: boolean | undefined
+
+  /**
+   * Additional arguments to pass when creating the queue.
+   */
+  arguments?: any
+
+  /**
+   * The time-to-live (TTL) for messages in the queue.
+   */
+  messageTtl?: number | undefined
+
+  /**
+   * The time in milliseconds after which the queue will be deleted.
+   */
+  expires?: number | undefined
+
+  /**
+   * The exchange to which messages will be sent if they are rejected or expire.
+   */
+  deadLetterExchange?: string | undefined
+
+  /**
+   * The routing key to use when sending messages to the dead letter exchange.
+   */
+  deadLetterRoutingKey?: string | undefined
+
+  /**
+   * The maximum number of messages that the queue can hold.
+   */
+  maxLength?: number | undefined
+
+  /**
+   * The maximum priority value for messages in the queue.
+   */
+  maxPriority?: number | undefined
+}
+
+/**
+ * An object containing instrumentors for various connection events.
+ */
+export interface ConnectionInstrumentors {
+  /**
+   * An instrumentor for the initialization event of the connection.
+   */
+  initialization: Instrumentor
+
+  /**
+   * An instrumentor for the getQueue event of the connection.
+   */
+  getQueue: Instrumentor
+
+  /**
+   * An instrumentor for the createChannel event of the connection.
+   */
+  createChannel: Instrumentor
+
+  /**
+   * An instrumentor for the assertQueue event of the connection.
+   */
+  assertQueue: Instrumentor
+
+  /**
+   * An instrumentor for the event listener of the connection.
+   */
+  eventListener: Instrumentor
+
+  /**
+   * An instrumentor for the event emitter of the connection.
+   */
+  eventEmitter: Instrumentor
+
+  /**
+   * An instrumentor for the shutdown event of the connection.
+   */
+  shutdown: Instrumentor
+}
+
+/**
+ * Type for a generic event listener.
+ * @callback EventListener
+ * @param {...any[]} args - The arguments.
+ * @returns {void | Promise<void>}
+ */
+export type ConnectionEventListener = (...args: any[]) => void | Promise<void>;
+
+/**
+ * Type for an error event listener.
+ * @callback ErrorEventListener
+ * @param {Error} error - The error object.
+ * @returns {void | Promise<void>}
+ */
+export type ConnectionErrorEventListener = (error: Error) => void | Promise<void>;
+
+/**
+ * Type for an error event listener.
+ * @callback ErrorEventListener
+ * @param {Error} error - The error object.
+ * @returns {void | Promise<void>}
+ */
+export type ConnectionCloseEventListener = (error?: Error) => void | Promise<void>;;
