@@ -39,6 +39,12 @@ jobs:
           node-version: 16.17.1
       - name: Install Dependancies
         run: npm ci
+      - name: Update Version
+        run: |
+        # Get the version from the release tag, stripping any non-numeric characters except for `.`
+        VERSION=$(echo "${{ github.ref }}" | sed -e 's/[^0-9\.]//g')
+        # Update the version in package.json
+        npm version --no-git-tag-version "$VERSION"
       - name: Generate Docs
         run: npm run docs
       - name: Upload artifact
