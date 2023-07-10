@@ -76,6 +76,14 @@ export class Queue {
     this.#client.$once('before:close', this.#doBeforeClientClose.bind(this))
   }
 
+/**
+ * Returns the name of the queue.
+ * @returns {string} - The name of the queue.
+ */
+  public get name() {
+    return this.#name
+  }
+
   /**
    * Checks the queue for messages and returns the number of messages in the queue.
    * @returns {Promise<amqplib.Replies.AssertQueue>} - A promise that resolves with the result of checking the queue.

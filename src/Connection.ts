@@ -326,6 +326,24 @@ export class Connection {
       await connection.close()
     })
   }
+
+/**
+ * Checks the status of all queues associated with the connection.
+ * @returns A `Promise` that resolves to an object containing the name of each queue and its status.
+ * @throws An error if the connection is not established or if any of the queues cannot be checked.
+ */
+  public async check(): Promise<ConnectionCheckResponse> {
+    await this.#connection
+    const promises: Array<Promise<ConnectionCheckResponse>> = []
+    this.#queues.forEach((queue) => {
+      promises.push(this.checkQueue(queue))
+    })
+    return Object.assign({}, ...(await Promise.all(promises))) as ConnectionCheckResponse
+  }
+
+  private async checkQueue(queue: Queue): Promise<ConnectionCheckResponse> {
+    return {[queue.name]: await queue.check()}
+  }
 }
 
 /**
@@ -550,4 +568,16 @@ export type ConnectionErrorEventListener = (error: Error) => void | Promise<void
  * @param {Error} error - The error object.
  * @returns {void | Promise<void>}
  */
-export type ConnectionCloseEventListener = (error?: Error) => void | Promise<void>;;
+export type ConnectionCloseEventListener = (error?: Error) => void | Promise<void>;
+
+/**
+ * An object representing the response of a connection check.
+ * @interface ConnectionCheckResponse
+ */
+export interface ConnectionCheckResponse {
+  /**
+   * A key-value pair where the key is the name of the queue and the value is the response of the {@link Queue.check} method.
+   * @type {Object.<string, amqplib.Replies.AssertQueue>}
+   */
+  [queue: string]: amqplib.Replies.AssertQueue
+}
