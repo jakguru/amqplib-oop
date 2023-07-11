@@ -323,7 +323,16 @@ export class Connection {
     return await this.#instrumentors.shutdown(async () => {
       const connection = await this.#connection
       await this.#bus.emitAsync('before:close')
-      await connection.close()
+      try {
+        await connection.close()
+      } catch (error) {
+        if ('string' === typeof error.message && error.message.includes('Connection closed (by client)')) {
+          // no-op
+        }
+        else {
+          throw error
+        }
+      }
     })
   }
 
