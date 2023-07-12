@@ -19,13 +19,14 @@ test.group('source.Queue', (group) => {
     const connection = new Connection(options)
     const queue = await connection.getQueue('test', { type: 'basic' })
     await queue.delete()
-    connection.close()
+    await connection.close()
   })
   group.teardown(async () => {
     const connection = new Connection(options)
     const queue = await connection.getQueue('test', { type: 'basic' })
     await queue.delete()
-    connection.close()
+    await connection.close()
+    await Connection.closeAll()
   })
   let connection: Connection
   group.each.setup(async () => {

@@ -11,6 +11,7 @@ import { Queue } from './Queue'
  * @classdesc An instance of a connection to a RabbitMQ server
  */
 export class Connection {
+  static readonly #connections: Array<Connection> = []
   /**
    * A `Promise` that resolves to a `amqplib.Connection` instance representing the connection to the RabbitMQ server.
    * @private
@@ -49,6 +50,16 @@ export class Connection {
    * in both the `Connection` and `Queue` classes.
    */
   #active: boolean = false
+
+  /**
+   * Whether the connection is permenantly closed or not.
+   * @private
+   * @since 1.0.12
+   * @remarks
+   *
+   * If the connection is closed, we should not re-run the close operation.
+   */
+  #closed: boolean = false
 
   /**
    * The amount of time to wait for the connection to become active or indicate closed / blocked before throwing an exception.
@@ -97,7 +108,7 @@ export class Connection {
       defaultInstrumentors,
       instrumentors
     ) as ConnectionInstrumentors
-    this.#bus = new Emittery({ maxListeners: 1000 })
+    this.#bus = new Emittery({ maxListeners: 1000, ignoreErrors: true })
     /**
      * Handle changing the `active` flag when the connection is closed, blocked, unblocked or connected.
      */
@@ -142,6 +153,7 @@ export class Connection {
       .catch((err) => {
         this.#bus.emit('error', err)
       })
+    Connection.#connections.push(this)
   }
 
   /**
@@ -443,6 +455,9 @@ export class Connection {
    */
   public async close(): Promise<void> {
     return await this.#instrumentors.shutdown(async () => {
+      if (this.#closed) {
+        return
+      }
       try {
         await this.#waitForActiveConnection(this.#waitForActiveConnectionTimeout)
         const connection = await this.#connection
@@ -462,9 +477,11 @@ export class Connection {
         }
         this.#bus.emit('close')
         this.#active = false
+        this.#closed = true
       } catch (error) {
         this.#bus.emit('close')
         this.#active = false
+        this.#closed = true
       }
     })
   }
@@ -571,6 +588,25 @@ export class Connection {
     }
 
     return await Promise.race(promises)
+  }
+
+  /**
+   * Closes all active connections.
+   * @returns A `Promise` that resolves when all connections have been closed.
+   * @throws An error if any of the connections cannot be closed.
+   * @since 1.0.12
+   *
+   * @remarks
+   *
+   * When the Connection class is imported, due to Live Bindings, this function will be able to close all connections that are created after the import.
+   * However, when the class is required as opposed to imported, this function will only be able to close connections that are created from within the file it is required in.
+   */
+  public static async closeAll(): Promise<void> {
+    const promises: Array<Promise<void>> = []
+    for (const connection of Connection.#connections) {
+      promises.push(connection.close())
+    }
+    await Promise.all(promises)
   }
 }
 

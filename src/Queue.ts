@@ -4,6 +4,7 @@ import type { Connection } from './Connection'
 import type { Instrumentor } from './Instrumentation'
 export type { Channel, ConfirmChannel } from 'amqplib'
 
+import ChannelError from './Errors/ChannelError'
 import ConnectionError from './Errors/ConnectionError'
 import QueueError from './Errors/QueueError'
 
@@ -27,6 +28,7 @@ export class Queue {
   #requeueOnNoAck: boolean = true
   #noAck: boolean = false
   #requeueOnError: boolean = true
+  #channelClosed: boolean = false
 
   /**
    * Creates an instance of a Queue which is connected to either a regular `amqplib.Channel` or a `amqplib.ConfirmChannel`.
@@ -49,7 +51,11 @@ export class Queue {
     this.#client = client
     this.#channel = channel
     this.#type = type
-    this.#bus = new Emittery({ maxListeners: 1000 })
+    this.#bus = new Emittery({ maxListeners: 1000, ignoreErrors: true })
+    this.#channel.on('error', (err) => this.#bus.emit('error', err))
+    this.#channel.on('close', () => {
+      this.#channelClosed = true
+    })
     const defaultInstrumentors: QueueInstrumentors = {
       preShutDown: (handle) => handle(),
       shutdown: (handle) => handle(),
@@ -173,6 +179,9 @@ export class Queue {
    */
   public ack(message: QueueMessage, allUpTo?: boolean): void {
     return this.#instrumentors.ack(() => {
+      if (this.#channelClosed) {
+        return
+      }
       try {
         this.#doWithErrorHandler(this.#channel.ack.bind(this.#channel, message, allUpTo))
       } catch (error) {
@@ -190,6 +199,9 @@ export class Queue {
    */
   public nack(message: QueueMessage, requeue: boolean = true, allUpTo: boolean = false): void {
     return this.#instrumentors.nack(() => {
+      if (this.#channelClosed) {
+        return
+      }
       try {
         this.#doWithErrorHandler(this.#channel.nack.bind(this.#channel, message, allUpTo, requeue))
       } catch (error) {
@@ -295,6 +307,16 @@ export class Queue {
    */
   public async awaitHandlingOfConfirmations(timeout: number = 10000): Promise<void> {
     return await this.#waitForConfirmationsToProcessOrTimeout(timeout)
+  }
+
+  /**
+   * Wait for all pending RPC messages to be processed, or timeout after a specified amount of time.
+   * @since 1.0.12
+   * @param timeout The amount of time to wait for pending RPC messages to process before timing out.
+   * @returns {Promise<void>}
+   */
+  public async awaitProcessingOfRPCs(timeout: number = 10000): Promise<void> {
+    return await this.#waitForPendingRPCMessagesToProcessOrTimeout(timeout)
   }
 
   /**
@@ -518,10 +540,16 @@ export class Queue {
   async #doBeforeClientClose(): Promise<void> {
     return await this.#instrumentors.preShutDown(async () => {
       await this.pause()
+      await this.#waitForPendingRPCMessagesToProcessOrTimeout(1000)
+      this.#channel.reply = null
       try {
         this.#doWithErrorHandler(this.#channel.close.bind(this.#channel))
       } catch (err) {
         this.#bus.emit('error', err)
+      }
+      this.#channelClosed = true
+      this.#channel.accept = () => {
+        this.#bus.emit('error', new ChannelError('Channel is closed'))
       }
       this.#bus.emit('deleted')
     })
@@ -565,6 +593,14 @@ export class Queue {
     }
   }
 
+  async #waitForPendingRPCMessagesToProcess() {
+    while (this.#channel.pending.length > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100)
+      })
+    }
+  }
+
   async #waitForConfirmationsToProcessOrTimeout(timeout: number = 1000) {
     await Promise.race([
       this.#waitForConfirmationsToProcess(),
@@ -573,8 +609,16 @@ export class Queue {
       }),
     ])
   }
-}
 
+  async #waitForPendingRPCMessagesToProcessOrTimeout(timeout: number = 1000) {
+    await Promise.race([
+      this.#waitForPendingRPCMessagesToProcess(),
+      new Promise((resolve) => {
+        setTimeout(resolve, timeout)
+      }),
+    ])
+  }
+}
 
 /**
  * A type that represents a callback function for an unconfirmed message.
@@ -600,12 +644,32 @@ export type UnconfirmedCallbackArray = Array<UnconfirmedCallbackOrNull>
  * @extends {amqplib.Channel}
  */
 export interface ConnectionBasicChannel extends amqplib.Channel {
-/**
- * An array of callbacks or nulls for a `ConnectionBasicChannel`.
- * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
- * @type {UnconfirmedCallbackArray}
- */
+  /**
+   * An array of callbacks or nulls for a `ConnectionBasicChannel`.
+   * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
+   * @type {UnconfirmedCallbackArray}
+   */
   unconfirmed: UnconfirmedCallbackArray
+  /**
+   * An array that holds the pending rpc messsages for the queue's channel.
+   * @type {Array<unknown>}
+   */
+  pending: Array<unknown>
+  /**
+   * A reply object that is used for RPC messages, or null if there's nothing
+   * @remarks
+   *
+   * This is only defined here so we can manually clear it when we are closing down the channel
+   */
+  reply: any | null
+
+  /**
+   * A function that is used to send a message to the queue.
+   *
+   * @remarks
+   * This is only defined here so we can manually monkey patch it when we are closing down the channel
+   */
+  accept: Function
 }
 
 /**
@@ -615,17 +679,38 @@ export interface ConnectionBasicChannel extends amqplib.Channel {
  */
 export interface ConnectionConfirmChannel extends amqplib.ConfirmChannel {
   /**
- * An array of callbacks or nulls for a `ConnectionConfirmChannel`.
- * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
- * @type {UnconfirmedCallbackArray}
- */
+   * An array of callbacks or nulls for a `ConnectionConfirmChannel`.
+   * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
+   * @type {UnconfirmedCallbackArray}
+   */
   unconfirmed: UnconfirmedCallbackArray
+  /**
+   * An array that holds the pending rpc messsages for the queue's channel.
+   * @type {Array<unknown>}
+   */
+  pending: Array<unknown>
+  /**
+   * A reply object that is used for RPC messages, or null if there's nothing
+   * @remarks
+   *
+   * This is only defined here so we can manually clear it when we are closing down the channel
+   */
+  reply: any | null
+
+  /**
+   * A function that is used to send a message to the queue.
+   *
+   * @remarks
+   * This is only defined here so we can manually monkey patch it when we are closing down the channel
+   */
+  accept: Function
 }
 
 /**
  * A type alias for a channel that can be either a regular `amqplib.Channel` or a `amqplib.ConfirmChannel`.
  * @interface
- * @param unconfirmed - An array of callbacks or nulls for a `ConnectionChannel`.
+ * @property unconfirmed - An array of callbacks or nulls for a `ConnectionChannel`.
+ * @property pending - An array that holds the pending rpc messsages for the queue's channel.
  */
 export type ConnectionChannel = ConnectionBasicChannel | ConnectionConfirmChannel
 
