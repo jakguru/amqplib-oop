@@ -530,6 +530,9 @@ export class Queue {
   }
 
   async #waitForTicksToFinish() {
+    if (this.#allTickPromises.length === 0 && !this.#lastTickPromise) {
+      return
+    }
     const promises = [...this.#allTickPromises]
     if (this.#lastTickPromise) {
       promises.push(this.#lastTickPromise)
