@@ -273,7 +273,7 @@ export class Queue {
    * @since 1.0.10
    * @returns {Promise<void>} - A promise that resolves when the queue has been successfully paused.
    */
-  public async pause(timeout:number = 1000): Promise<void> {
+  public async pause(timeout: number = 1000): Promise<void> {
     return this.#instrumentors.pause(async () => {
       if (this.#paused) {
         return
@@ -285,6 +285,16 @@ export class Queue {
       }
       await this.#waitForConfirmationsToProcessOrTimeout(timeout)
     })
+  }
+
+  /**
+   * Wait for all `ack` and `nack` confirmations to be transmitted to the server, or timeout after a specified amount of time.
+   * @since 1.0.11
+   * @param timeout The amount of time to wait for confirmations to process before timing out.
+   * @returns {Promise<void>}
+   */
+  public async awaitHandlingOfConfirmations(timeout: number = 10000): Promise<void> {
+    return await this.#waitForConfirmationsToProcessOrTimeout(timeout)
   }
 
   /**
@@ -556,7 +566,7 @@ export class Queue {
   }
 
   async #waitForConfirmationsToProcessOrTimeout(timeout: number = 1000) {
-    return await Promise.race([
+    await Promise.race([
       this.#waitForConfirmationsToProcess(),
       new Promise((resolve) => {
         setTimeout(resolve, timeout)
@@ -565,17 +575,57 @@ export class Queue {
   }
 }
 
+
+/**
+ * A type that represents a callback function for an unconfirmed message.
+ * @typedef {(...args: any[]) => void} UnconfirmedCallback
+ */
+export type UnconfirmedCallback = (...args: any[]) => void
+
+/**
+ * A type that represents a callback function for an unconfirmed message, or null if the message is not confirmed.
+ * @typedef {UnconfirmedCallback | null} UnconfirmedCallbackOrNull
+ */
+export type UnconfirmedCallbackOrNull = UnconfirmedCallback | null
+
+/**
+ * An array type that contains `UnconfirmedCallback` functions.
+ * @typedef {Array<UnconfirmedCallbackOrNull>} UnconfirmedCallbackArray
+ */
+export type UnconfirmedCallbackArray = Array<UnconfirmedCallbackOrNull>
+
+/**
+ * An interface that extends the `amqplib.Channel` interface and adds an array of unconfirmed callbacks.
+ * @interface
+ * @extends {amqplib.Channel}
+ */
 export interface ConnectionBasicChannel extends amqplib.Channel {
-  unconfirmed: Array<(...args: any[]) => void | null>
+/**
+ * An array of callbacks or nulls for a `ConnectionBasicChannel`.
+ * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
+ * @type {UnconfirmedCallbackArray}
+ */
+  unconfirmed: UnconfirmedCallbackArray
 }
 
+/**
+ * An interface that extends the `amqplib.ConfirmChannel` interface and adds an array of unconfirmed callbacks.
+ * @interface
+ * @extends {amqplib.ConfirmChannel}
+ */
 export interface ConnectionConfirmChannel extends amqplib.ConfirmChannel {
-  unconfirmed: Array<(...args: any[]) => void | null>
+  /**
+ * An array of callbacks or nulls for a `ConnectionConfirmChannel`.
+ * Each item is a callback that is called when a message is confirmed or null if the message is not confirmed.
+ * @type {UnconfirmedCallbackArray}
+ */
+  unconfirmed: UnconfirmedCallbackArray
 }
 
 /**
  * A type alias for a channel that can be either a regular `amqplib.Channel` or a `amqplib.ConfirmChannel`.
  * @interface
+ * @param unconfirmed - An array of callbacks or nulls for a `ConnectionChannel`.
  */
 export type ConnectionChannel = ConnectionBasicChannel | ConnectionConfirmChannel
 
