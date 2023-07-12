@@ -17,13 +17,13 @@ test.group('source.Queue', (group) => {
   }
   group.setup(async () => {
     const connection = new Connection(options)
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     await queue.delete()
     connection.close()
   })
   group.teardown(async () => {
     const connection = new Connection(options)
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     await queue.delete()
     connection.close()
   })
@@ -37,33 +37,33 @@ test.group('source.Queue', (group) => {
   group.each.timeout(1000)
 
   test('can be created', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
   })
 
   test('can be checked', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     const result = await queue.check()
     assert.isNotNull(result)
   })
 
   test('can be deleted', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     const result = await queue.delete()
     assert.isNotNull(result)
   })
 
   test('can be purged', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     const result = await queue.purge()
     assert.isNotNull(result)
   })
 
   test('can manually enqueue messages, retrieve them and ack them', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
     assert.isNotNull(result)
@@ -80,7 +80,7 @@ test.group('source.Queue', (group) => {
     assert,
   }) => {
     const connection = new Connection(options)
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     await queue.purge()
     const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
@@ -102,7 +102,7 @@ test.group('source.Queue', (group) => {
   })
 
   test('can consume and ack messages via a listener', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     queue.$on('error', console.error)
     connection.$on('error', console.error)
     assert.instanceOf(queue, Queue)
@@ -126,7 +126,7 @@ test.group('source.Queue', (group) => {
   })
 
   test('can consume and ack messages via a non-blocking listener', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     queue.$on('error', console.error)
     connection.$on('error', console.error)
     assert.instanceOf(queue, Queue)
@@ -179,7 +179,7 @@ test.group('source.Queue', (group) => {
    * Similar to the above, but simulating a connection loss while trying to dequeue a message.
    */
   test('can handle connection loss during dequeue', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     await Promise.all([
       queue.enqueue(Buffer.from('test'), { persistent: false }),
@@ -199,7 +199,7 @@ test.group('source.Queue', (group) => {
    * This test would simulate a situation where the connection is lost while trying to acknowledge a message. The test should verify that the Queue class can handle this gracefully.
    */
   test('can handle connection loss during ack', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     await queue.purge()
     const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
@@ -208,7 +208,7 @@ test.group('source.Queue', (group) => {
     assert.isNotFalse(message)
     if (false !== message) {
       assert.equal(message?.content.toString(), 'test')
-
+      await connection.close()
       const ack = await queue.ack(message)
       assert.isUndefined(ack)
     }
@@ -218,7 +218,7 @@ test.group('source.Queue', (group) => {
    * Similar to the above, but simulating a connection loss while trying to not acknowledge a message.
    */
   test('can handle connection loss during nack', async ({ assert }) => {
-    const queue = await connection.getQueue('test')
+    const queue = await connection.getQueue('test', { type: 'basic' })
     assert.instanceOf(queue, Queue)
     await queue.purge()
     const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
@@ -227,9 +227,90 @@ test.group('source.Queue', (group) => {
     assert.isNotFalse(message)
     if (false !== message) {
       assert.equal(message?.content.toString(), 'test')
-
+      await connection.close()
       const ack = await queue.nack(message)
       assert.isUndefined(ack)
     }
   })
+
+  test('pausing a queue will wait for all confirmations to be processed', async ({ assert }) => {
+    const queue = await connection.getQueue('test', { type: 'basic' })
+    queue.$on('error', console.error)
+    connection.$on('error', console.error)
+    assert.instanceOf(queue, Queue)
+    await queue.purge()
+    let count = 0
+    const received: Promise<void> = new Promise((resolve) => {
+      queue.listen(
+        (message, ack) => {
+          assert.isNotNull(message)
+          if (message) {
+            assert.equal(message.content.toString(), 'test')
+            count++
+          }
+          ack()
+          if (count === 5) {
+            resolve()
+          }
+        },
+        { blocking: false }
+      )
+    })
+    await Promise.all([
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+    ])
+    await received
+    await queue.pause()
+    const { messageCount } = await queue.check()
+    assert.equal(messageCount, 45)
+  }).timeout(5000)
 })

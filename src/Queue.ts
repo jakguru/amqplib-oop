@@ -269,9 +269,11 @@ export class Queue {
   /**
    * Pauses the queue listener, preventing it from processing any new messages until resumed.
    * If the queue is already paused, this method does nothing.
+   * @param {number} [timeout=1000] - The number of milliseconds to wait for the queue to finish processing confirmations before timing out.
+   * @since 1.0.10
    * @returns {Promise<void>} - A promise that resolves when the queue has been successfully paused.
    */
-  public async pause(): Promise<void> {
+  public async pause(timeout:number = 1000): Promise<void> {
     return this.#instrumentors.pause(async () => {
       if (this.#paused) {
         return
@@ -281,6 +283,7 @@ export class Queue {
       while (this.#allTickPromises.length) {
         this.#allTickPromises.splice(0, this.#allTickPromises.length)
       }
+      await this.#waitForConfirmationsToProcessOrTimeout(timeout)
     })
   }
 
@@ -540,13 +543,41 @@ export class Queue {
     }
     await Promise.all(promises)
   }
+
+  async #waitForConfirmationsToProcess() {
+    const getReallyUnconfirmed = () => {
+      return this.#channel.unconfirmed.filter((cb) => cb !== null)
+    }
+    while (getReallyUnconfirmed().length > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100)
+      })
+    }
+  }
+
+  async #waitForConfirmationsToProcessOrTimeout(timeout: number = 1000) {
+    return await Promise.race([
+      this.#waitForConfirmationsToProcess(),
+      new Promise((resolve) => {
+        setTimeout(resolve, timeout)
+      }),
+    ])
+  }
+}
+
+export interface ConnectionBasicChannel extends amqplib.Channel {
+  unconfirmed: Array<(...args: any[]) => void | null>
+}
+
+export interface ConnectionConfirmChannel extends amqplib.ConfirmChannel {
+  unconfirmed: Array<(...args: any[]) => void | null>
 }
 
 /**
  * A type alias for a channel that can be either a regular `amqplib.Channel` or a `amqplib.ConfirmChannel`.
  * @interface
  */
-export type ConnectionChannel = amqplib.Channel | amqplib.ConfirmChannel
+export type ConnectionChannel = ConnectionBasicChannel | ConnectionConfirmChannel
 
 /**
  * Options for enqueuing a message to a queue.
