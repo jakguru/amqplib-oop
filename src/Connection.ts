@@ -1,5 +1,7 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
+import ChannelError from './Errors/ChannelError'
+import ConnectionError from './Errors/ConnectionError'
 import type { Instrumentor } from './Instrumentation'
 import type { ConnectionChannel, QueueInstrumentors } from './Queue'
 import { Queue } from './Queue'
@@ -27,7 +29,37 @@ export class Connection {
    */
   readonly #queues: Map<string, Queue> = new Map()
 
+  /**
+   * An object containing all the instrumentors for various connection operations.
+   * @private
+   */
   readonly #instrumentors: ConnectionInstrumentors
+
+  /**
+   * Whether the connection is active or not.
+   * @private
+   * @since 1.0.9
+   * @remarks
+   *
+   * If the connection is not active, it will not be possible to create new channels, meaning that
+   * it will not be possible to create new queues, publish messages, consume messages or
+   * acknowledge messages.
+   *
+   * We use this flag to prevent operations that require an active connection from being executed
+   * in both the `Connection` and `Queue` classes.
+   */
+  #active: boolean = false
+
+  /**
+   * The amount of time to wait for the connection to become active or indicate closed / blocked before throwing an exception.
+   * @private
+   * @since 1.0.9
+   * @remarks
+   *
+   * This value is used internally by the `Connection` class to determine how long to wait for the connection to become active or indicate closed / blocked before throwing an exception
+   * but can be set by the user if they want to change the default value.
+   */
+  #waitForActiveConnectionTimeout: number = 1000
 
   /**
    * @class Connection
@@ -66,31 +98,96 @@ export class Connection {
       instrumentors
     ) as ConnectionInstrumentors
     this.#bus = new Emittery({ maxListeners: 1000 })
+    /**
+     * Handle changing the `active` flag when the connection is closed, blocked, unblocked or connected.
+     */
+    this.#bus.on('close', () => {
+      this.#active = false
+    })
+    this.#bus.on('blocked', () => {
+      this.#active = false
+    })
+    this.#bus.on('unblocked', () => {
+      this.#active = true
+    })
+    this.#bus.on('connected', () => {
+      this.#active = true
+    })
     const mergedOptions = Object.assign({}, defaultOptions, options) as ConnectionConstructorOptions
     this.#connection = this.#instrumentors.initialization(async () => {
       return await amqplib.connect(mergedOptions)
     })
-    this.#connection.then((connection) => {
-      this.#instrumentors.eventEmitter(() => {
-        this.#bus.emit('connected')
+    this.#connection
+      .then((connection) => {
+        this.#instrumentors.eventEmitter(() => {
+          this.#bus.emit('connected')
+        })
+        connection.on(
+          'error',
+          this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'error'))
+        )
+        connection.on(
+          'close',
+          this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'close'))
+        )
+        connection.on(
+          'blocked',
+          this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'blocked'))
+        )
+        connection.on(
+          'unblocked',
+          this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'unblocked'))
+        )
       })
-      connection.on(
-        'error',
-        this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'error'))
-      )
-      connection.on(
-        'close',
-        this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'close'))
-      )
-      connection.on(
-        'blocked',
-        this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'blocked'))
-      )
-      connection.on(
-        'unblocked',
-        this.#instrumentors.eventEmitter.bind(null, this.#bus.emit.bind(this.#bus, 'unblocked'))
-      )
-    })
+      .catch((err) => {
+        this.#bus.emit('error', err)
+      })
+  }
+
+  /**
+   * Whether the connection is active or not.
+   * @readonly
+   * @since 1.0.9
+   * @remarks
+   *
+   * If the connection is not active, it will not be possible to create new channels, meaning that
+   * it will not be possible to create new queues, publish messages, consume messages or
+   * acknowledge messages.
+   *
+   * We use this flag to prevent operations that require an active connection from being executed
+   * in both the `Connection` and `Queue` classes.
+   */
+  public get active(): boolean {
+    return this.#active
+  }
+
+  /**
+   * The amount of time to wait for the connection to become active or indicate closed / blocked before throwing an exception.
+   * @readonly
+   * @since 1.0.9
+   * @remarks
+   *
+   * This value is used internally by the `Connection` class to determine how long to wait for the connection to become active or indicate closed / blocked before throwing an exception
+   * but can be set by the user by calling `Connection.setActiveConnectionTimeout` if they want to change the default value.
+   */
+  public get activeConnectionTimeout(): number {
+    return this.#waitForActiveConnectionTimeout
+  }
+
+  /**
+   * Sets the amount of time to wait for the connection to become active or indicate closed / blocked before throwing an exception.
+   * @param timeout The amount of time to wait for the connection to become active or indicate closed / blocked before throwing an exception.
+   * @throws An error if the timeout is not an integer greater than or equal to 100 (100ms).
+   * @since 1.0.9
+   * @remarks
+   *
+   * This value is used internally by the `Connection` class to determine how long to wait for the connection to become active or indicate closed / blocked before throwing an exception
+   */
+  public setActiveConnectionTimeout(timeout: number): void {
+    if (!Number.isInteger(timeout) || timeout < 100) {
+      throw new Error('The timeout must be an integer greater than or equal to 100 (100ms)')
+    }
+    this.#waitForActiveConnectionTimeout = timeout
   }
 
   /**
@@ -107,9 +204,10 @@ export class Connection {
     instrumentors?: Partial<QueueInstrumentors>
   ): Promise<Queue> {
     return await this.#instrumentors.getQueue(async () => {
+      await this.#waitForActiveConnection(this.#waitForActiveConnectionTimeout)
       if (this.#queues.has(name)) {
         const ret = this.#queues.get(name)
-        if (ret) {
+        if (ret instanceof Queue) {
           return ret
         }
       }
@@ -126,12 +224,18 @@ export class Connection {
       const connection = await this.#connection
       const channel: ConnectionChannel = await this.#instrumentors.createChannel(async () => {
         if ('confirm' === mergedOptions.type) {
-          return await connection.createConfirmChannel()
+          return await this.#doWithErrorHandler(connection.createConfirmChannel.bind(connection))
         } else {
-          return await connection.createChannel()
+          return await this.#doWithErrorHandler(connection.createChannel.bind(connection))
         }
       })
-      const assertion = await channel.assertQueue(name, queueOptions)
+      const assertion = await this.#doWithErrorHandler(
+        channel.assertQueue.bind(channel, name, queueOptions),
+        channel
+      )
+      if (assertion instanceof Error) {
+        throw assertion
+      }
       if (assertion.queue !== name) {
         throw new Error('Failed to define Queue')
       }
@@ -314,26 +418,53 @@ export class Connection {
   }
 
   /**
+   * Returns a `Promise` that resolves when the connection is active.
+   * @param timeout The maximum time to wait for the connection to become active.
+   * @returns A `Promise` that resolves when the connection is active.
+   * @throws An error if the connection is not active within the specified timeout or is closed / blocked before becoming active.
+   * @since 1.0.9
+   */
+  public async waitForActiveConnection(timeout: number = 1000) {
+    return await this.#waitForActiveConnection(timeout)
+  }
+
+  /**
    * Closes the connection to the RabbitMQ server.
    *
    * @returns A `Promise` that resolves when the connection has been closed.
    * @throws An error if the connection could not be closed.
+   *
+   * @remarks
+   *
+   * The reason we don't check if the connection is active and just return if it is already inactive
+   * is because the connection may be "blocked" and we want to allow the user to close the connection
+   * even if it is blocked. Also, this function cleans up any channels which were opened by the connection,
+   * and shuts down any queues which were created by the connection.
    */
   public async close(): Promise<void> {
     return await this.#instrumentors.shutdown(async () => {
-      const connection = await this.#connection
-      await this.#bus.emitAsync('before:close')
       try {
-        await connection.close()
-      } catch (error) {
-        if (
-          'string' === typeof error.message &&
-          error.message.includes('Connection closed (by client)')
-        ) {
-          // no-op
-        } else {
-          throw error
+        await this.#waitForActiveConnection(this.#waitForActiveConnectionTimeout)
+        const connection = await this.#connection
+        await this.#bus.emitAsync('before:close')
+        try {
+          await this.#doWithErrorHandler(connection.close.bind(connection))
+        } catch (error) {
+          if (
+            'string' === typeof error.message &&
+            (error.message.includes('Connection closed (by client)') ||
+              error.message.includes('Connection closing'))
+          ) {
+            // no-op
+          } else {
+            throw error
+          }
         }
+        this.#bus.emit('close')
+        this.#active = false
+      } catch (error) {
+        this.#bus.emit('close')
+        this.#active = false
       }
     })
   }
@@ -345,16 +476,101 @@ export class Connection {
    * @since 1.0.4
    */
   public async check(): Promise<ConnectionCheckResponse> {
+    await this.#waitForActiveConnection(this.#waitForActiveConnectionTimeout)
     await this.#connection
     const promises: Array<Promise<ConnectionCheckResponse>> = []
     this.#queues.forEach((queue) => {
-      promises.push(this.checkQueue(queue))
+      promises.push(this.#checkQueue.call(this, queue))
     })
     return Object.assign({}, ...(await Promise.all(promises))) as ConnectionCheckResponse
   }
 
-  private async checkQueue(queue: Queue): Promise<ConnectionCheckResponse> {
+  /**
+   * Checks the status of the specified queue.
+   * @param queue The queue to check.
+   * @returns A `Promise` that resolves to an object containing the name of the queue and its status.
+   * @throws An error if the connection is not established or if the queue cannot be checked.
+   * @since 1.0.4
+   * @private
+   */
+  async #checkQueue(queue: Queue): Promise<ConnectionCheckResponse> {
+    await this.#waitForActiveConnection(this.#waitForActiveConnectionTimeout)
     return { [queue.name]: await queue.check() }
+  }
+
+  /**
+   * Waits a specific amount of time for the connection to become active or to indicate that it is blocked or closed.
+   * @param timeout The amount of time to wait for the connection to become active.
+   * @returns A `Promise` that resolves when the connection is active or rejects if the connection is blocked or closed.
+   * @throws An error if the connection is blocked or closed.
+   * @private
+   * @since 1.0.9
+   */
+  async #waitForActiveConnection(timeout: number = 1000): Promise<void> {
+    if (this.#active) {
+      return
+    }
+    const promises: Array<Promise<Error | void>> = [
+      new Promise((resolve) =>
+        setTimeout(
+          resolve.bind(null, new Error(`Connection timed out after ${timeout}ms`)),
+          timeout
+        )
+      ),
+      new Promise((resolve) => this.#bus.once('connected', resolve.bind(null, void 0))),
+      new Promise((resolve) => this.#bus.once('unblocked', resolve.bind(null, void 0))),
+      new Promise((resolve) =>
+        this.#bus.once('close', resolve.bind(null, new Error('Connection closed')))
+      ),
+      new Promise((resolve) =>
+        this.#bus.once('blocked', resolve.bind(null, new Error('Connection blocked')))
+      ),
+    ]
+    const result = await Promise.race(promises)
+    if (result instanceof Error) {
+      throw result
+    }
+  }
+
+  /**
+   * Runs the specified function, but if an error is emitted by the connection, the function is cancelled and the error is thrown.
+   * @param handle The function to run.
+   * @returns A `Promise` that resolves when the function has completed or rejects if the connection emits an error.
+   * @throws An error if the connection emits an error.
+   * @private
+   * @since 1.0.9
+   */
+  async #doWithErrorHandler(handle: Function, channel?: ConnectionChannel) {
+    const connectionErrorPromise = new Promise((resolve) => {
+      this.#bus.once('error', (e) => {
+        const err = new ConnectionError(e.message)
+        resolve(err)
+      })
+      this.#bus.once('close', () => {
+        const err = new ConnectionError('Connection closed')
+        resolve(err)
+      })
+      this.#bus.once('blocked', () => {
+        const err = new ConnectionError('Connection blocked')
+        resolve(err)
+      })
+    })
+    const promises: Array<Promise<any | void>> = [handle(), connectionErrorPromise]
+    if (channel) {
+      const channelErrorPromise = new Promise((resolve) => {
+        channel.once('close', () => {
+          const err = new ChannelError('Channel closed')
+          resolve(err)
+        })
+        channel.once('error', (e) => {
+          const err = new ChannelError(e.message)
+          resolve(err)
+        })
+      })
+      promises.push(channelErrorPromise)
+    }
+
+    return await Promise.race(promises)
   }
 }
 

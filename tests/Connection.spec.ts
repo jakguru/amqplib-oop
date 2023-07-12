@@ -3,7 +3,7 @@ import type { ConnectionConstructorOptions } from '../src/Connection'
 import { Connection } from '../src/Connection'
 import { Queue } from '../src/Queue'
 
-test.group('build.Connection', () => {
+test.group('build.Connection', (group) => {
   const options: Partial<ConnectionConstructorOptions> = {
     protocol: process.env.PROTOCOL,
     hostname: process.env.HOSTNAME,
@@ -15,20 +15,29 @@ test.group('build.Connection', () => {
     heartbeat: process.env.HEARTBEAT ? parseInt(process.env.HEARTBEAT) : undefined,
     vhost: process.env.VHOST,
   }
-
-  test('can be instantiated', ({ assert }) => {
+  group.setup(async () => {
     const connection = new Connection(options)
-    assert.instanceOf(connection, Connection)
+    const queue = await connection.getQueue('test')
+    await queue.delete()
     connection.close()
   })
+  group.teardown(async () => {
+    const connection = new Connection(options)
+    const queue = await connection.getQueue('test')
+    await queue.delete()
+    connection.close()
+  })
+  let connection: Connection
+  group.each.setup(async () => {
+    connection = new Connection(options)
+  })
+  group.each.teardown(async () => {
+    await connection.close()
+  })
+  group.each.timeout(1000)
 
   test('can generate a queue', async ({ assert }) => {
-    const connection = new Connection(options)
-    const queue = await connection.getQueue('test', {
-      durable: false,
-      autoDelete: true,
-    })
+    const queue = await connection.getQueue('test')
     assert.instanceOf(queue, Queue)
-    connection.close()
   })
 })

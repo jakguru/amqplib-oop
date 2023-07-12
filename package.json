@@ -7,6 +7,7 @@
     "test": "node -r ts-node/register bin/test.ts",
     "build": "rm -rf dist && npx tsc && rm -rf dist/bin && rm -rf dist/tests",
     "watch": "rm -rf dist && npx tsc -w && rm -rf dist/bin && rm -rf dist/tests",
+    "type-check": "npx tsc --noEmit",
     "docs": "npx typedoc",
     "docs:watch": "npx typedoc --watch",
     "lint": "eslint . --ext=.ts",

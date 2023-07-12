@@ -151,6 +151,7 @@ export class Queue {
           return await new Promise((resolve) => {
             this.#channel.sendToQueue(this.#name, content, mergedOptions, (err) => {
               if (err) {
+                this.#bus.emit('error', err)
                 resolve(false)
               } else {
                 resolve(true)
