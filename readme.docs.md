@@ -84,10 +84,7 @@ const connection = new Connection(config, {
   eventEmitter: newrelic.startBackgroundTransaction.bind(newrelic, 'rabbitmq.eventEmitter'),
   eventListener: newrelic.startBackgroundTransaction.bind(newrelic, 'rabbitmq.eventListener'),
   getQueue: newrelic.startBackgroundTransaction.bind(newrelic, 'rabbitmq.getQueue'),
-  initialization: newrelic.startBackgroundTransaction.bind(
-    newrelic,
-    'rabbitmq.initialization'
-  ),
+  initialization: newrelic.startBackgroundTransaction.bind(newrelic, 'rabbitmq.initialization'),
   shutdown: newrelic.startBackgroundTransaction.bind(newrelic, 'rabbitmq.shutdown'),
 })
 ```

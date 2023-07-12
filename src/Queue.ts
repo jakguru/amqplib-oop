@@ -49,7 +49,7 @@ export class Queue {
     this.#client = client
     this.#channel = channel
     this.#type = type
-    this.#bus = new Emittery()
+    this.#bus = new Emittery({ maxListeners: 1000 })
     const defaultInstrumentors: QueueInstrumentors = {
       preShutDown: (handle) => handle(),
       shutdown: (handle) => handle(),
@@ -76,10 +76,10 @@ export class Queue {
     this.#client.$once('before:close', this.#doBeforeClientClose.bind(this))
   }
 
-/**
- * Returns the name of the queue.
- * @returns {string} - The name of the queue.
- */
+  /**
+   * Returns the name of the queue.
+   * @returns {string} - The name of the queue.
+   */
   public get name() {
     return this.#name
   }
@@ -172,7 +172,11 @@ export class Queue {
    */
   public ack(message: QueueMessage, allUpTo?: boolean): void {
     return this.#instrumentors.ack(() => {
-      this.#channel.ack(message, allUpTo)
+      try {
+        this.#doWithErrorHandler(this.#channel.ack.bind(this.#channel, message, allUpTo))
+      } catch (error) {
+        this.#bus.emit('error', error)
+      }
     })
   }
 
@@ -185,7 +189,11 @@ export class Queue {
    */
   public nack(message: QueueMessage, requeue: boolean = true, allUpTo: boolean = false): void {
     return this.#instrumentors.nack(() => {
-      this.#channel.nack(message, allUpTo, requeue)
+      try {
+        this.#doWithErrorHandler(this.#channel.nack.bind(this.#channel, message, allUpTo, requeue))
+      } catch (error) {
+        this.#bus.emit('error', error)
+      }
     })
   }
 
@@ -200,7 +208,14 @@ export class Queue {
         noAck: false,
       }
       const mergedOptions = Object.assign({}, defaultOptions, options) as GetMessagesOptions
-      return await this.#channel.get(this.#name, mergedOptions)
+      try {
+        return await this.#doWithErrorHandler(
+          this.#channel.get.bind(this.#channel, this.#name, mergedOptions)
+        )
+      } catch (error) {
+        this.#bus.emit('error', error)
+        return false
+      }
     })
   }
 
@@ -489,7 +504,11 @@ export class Queue {
   async #doBeforeClientClose(): Promise<void> {
     return await this.#instrumentors.preShutDown(async () => {
       await this.pause()
-      await this.#channel.close()
+      try {
+        this.#doWithErrorHandler(this.#channel.close.bind(this.#channel))
+      } catch (err) {
+        this.#bus.emit('error', err)
+      }
       this.#bus.emit('deleted')
     })
   }

@@ -4,7 +4,7 @@
  * @param {...any[]} args - The arguments.
  * @returns {any}
  */
-export type InstrumentationHandleFunction = (...args: any[]) => any;
+export type InstrumentationHandleFunction = (...args: any[]) => any
 
 /**
  * Represents an instrumentor function that takes a function handle as input and returns its return type.

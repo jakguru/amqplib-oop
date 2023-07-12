@@ -187,4 +187,94 @@ test.group('source.Queue', (group) => {
     assert.equal(count, 5)
     connection.close()
   })
+
+  /**
+   * This test would simulate a situation where the connection to the queue is lost while trying to enqueue a message. The test should verify that the Queue class can handle this gracefully, either by retrying the operation, buffering the message for later, or throwing an appropriate exception.
+   */
+  test('can handle connection loss during enqueue', async ({ assert }) => {
+    const connection = new Connection(options)
+    const queue = await connection.getQueue('test', {
+      type: 'basic',
+      durable: false,
+      autoDelete: true,
+    })
+    assert.instanceOf(queue, Queue)
+    const aLotOfMessages = new Array(100).fill(Buffer.from('test'))
+    const promise = Promise.all(
+      aLotOfMessages.map((message) => queue.enqueue(message, { persistent: false }))
+    )
+    connection.close()
+    const res = await promise
+    assert.deepEqual(res, Array(100).fill(true))
+  })
+
+  /**
+   * Similar to the above, but simulating a connection loss while trying to dequeue a message.
+   */
+  test('can handle connection loss during dequeue', async ({ assert }) => {
+    const connection = new Connection(options)
+    const queue = await connection.getQueue('test', {
+      durable: false,
+      autoDelete: true,
+    })
+    assert.instanceOf(queue, Queue)
+    await Promise.all([
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+      queue.enqueue(Buffer.from('test'), { persistent: false }),
+    ])
+    const message = await queue.get()
+    assert.isNotFalse(message)
+    connection.close()
+    const messageAfterClose = await queue.get()
+    assert.isFalse(messageAfterClose)
+  })
+
+  /**
+   * This test would simulate a situation where the connection is lost while trying to acknowledge a message. The test should verify that the Queue class can handle this gracefully.
+   */
+  test('can handle connection loss during ack', async ({ assert }) => {
+    const connection = new Connection(options)
+    const queue = await connection.getQueue('test', {
+      durable: false,
+      autoDelete: true,
+    })
+    assert.instanceOf(queue, Queue)
+    await queue.purge()
+    const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
+    assert.isNotNull(result)
+    const message = await queue.get()
+    assert.isNotFalse(message)
+    if (false !== message) {
+      assert.equal(message?.content.toString(), 'test')
+      connection.close()
+      const ack = await queue.ack(message)
+      assert.isUndefined(ack)
+    }
+  })
+
+  /**
+   * Similar to the above, but simulating a connection loss while trying to not acknowledge a message.
+   */
+  test('can handle connection loss during nack', async ({ assert }) => {
+    const connection = new Connection(options)
+    const queue = await connection.getQueue('test', {
+      durable: false,
+      autoDelete: true,
+    })
+    assert.instanceOf(queue, Queue)
+    await queue.purge()
+    const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
+    assert.isNotNull(result)
+    const message = await queue.get()
+    assert.isNotFalse(message)
+    if (false !== message) {
+      assert.equal(message?.content.toString(), 'test')
+      connection.close()
+      const ack = await queue.nack(message)
+      assert.isUndefined(ack)
+    }
+  })
 })

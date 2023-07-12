@@ -65,7 +65,7 @@ export class Connection {
       defaultInstrumentors,
       instrumentors
     ) as ConnectionInstrumentors
-    this.#bus = new Emittery()
+    this.#bus = new Emittery({ maxListeners: 1000 })
     const mergedOptions = Object.assign({}, defaultOptions, options) as ConnectionConstructorOptions
     this.#connection = this.#instrumentors.initialization(async () => {
       return await amqplib.connect(mergedOptions)
@@ -326,22 +326,24 @@ export class Connection {
       try {
         await connection.close()
       } catch (error) {
-        if ('string' === typeof error.message && error.message.includes('Connection closed (by client)')) {
+        if (
+          'string' === typeof error.message &&
+          error.message.includes('Connection closed (by client)')
+        ) {
           // no-op
-        }
-        else {
+        } else {
           throw error
         }
       }
     })
   }
 
-/**
- * Checks the status of all queues associated with the connection.
- * @returns A `Promise` that resolves to an object containing the name of each queue and its status.
- * @throws An error if the connection is not established or if any of the queues cannot be checked.
- * @since 1.0.4
- */
+  /**
+   * Checks the status of all queues associated with the connection.
+   * @returns A `Promise` that resolves to an object containing the name of each queue and its status.
+   * @throws An error if the connection is not established or if any of the queues cannot be checked.
+   * @since 1.0.4
+   */
   public async check(): Promise<ConnectionCheckResponse> {
     await this.#connection
     const promises: Array<Promise<ConnectionCheckResponse>> = []
@@ -352,7 +354,7 @@ export class Connection {
   }
 
   private async checkQueue(queue: Queue): Promise<ConnectionCheckResponse> {
-    return {[queue.name]: await queue.check()}
+    return { [queue.name]: await queue.check() }
   }
 }
 
@@ -562,7 +564,7 @@ export interface ConnectionInstrumentors {
  * @param {...any[]} args - The arguments.
  * @returns {void | Promise<void>}
  */
-export type ConnectionEventListener = (...args: any[]) => void | Promise<void>;
+export type ConnectionEventListener = (...args: any[]) => void | Promise<void>
 
 /**
  * Type for an error event listener.
@@ -570,7 +572,7 @@ export type ConnectionEventListener = (...args: any[]) => void | Promise<void>;
  * @param {Error} error - The error object.
  * @returns {void | Promise<void>}
  */
-export type ConnectionErrorEventListener = (error: Error) => void | Promise<void>;
+export type ConnectionErrorEventListener = (error: Error) => void | Promise<void>
 
 /**
  * Type for an error event listener.
@@ -578,7 +580,7 @@ export type ConnectionErrorEventListener = (error: Error) => void | Promise<void
  * @param {Error} error - The error object.
  * @returns {void | Promise<void>}
  */
-export type ConnectionCloseEventListener = (error?: Error) => void | Promise<void>;
+export type ConnectionCloseEventListener = (error?: Error) => void | Promise<void>
 
 /**
  * An object representing the response of a connection check.
