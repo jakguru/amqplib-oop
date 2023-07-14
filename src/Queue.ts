@@ -51,7 +51,7 @@ export class Queue {
     this.#client = client
     this.#channel = channel
     this.#type = type
-    this.#bus = new Emittery({ maxListeners: 1000, ignoreErrors: true })
+    this.#bus = new Emittery({ maxListeners: Infinity, ignoreErrors: true })
     this.#channel.on('error', (err) => this.#bus.emit('error', err))
     this.#channel.on('close', () => {
       this.#channelClosed = true

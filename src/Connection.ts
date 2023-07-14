@@ -108,7 +108,7 @@ export class Connection {
       defaultInstrumentors,
       instrumentors
     ) as ConnectionInstrumentors
-    this.#bus = new Emittery({ maxListeners: 1000, ignoreErrors: true })
+    this.#bus = new Emittery({ maxListeners: Infinity, ignoreErrors: true })
     /**
      * Handle changing the `active` flag when the connection is closed, blocked, unblocked or connected.
      */
