@@ -1,5 +1,6 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
+import { inspect } from 'util'
 import ChannelError from './Errors/ChannelError'
 import ConnectionError from './Errors/ConnectionError'
 import type { Instrumentor } from './Instrumentation'
@@ -560,8 +561,17 @@ export class Connection {
   async #doWithErrorHandler(handle: Function, channel?: ConnectionChannel) {
     const connectionErrorPromise = new Promise((resolve) => {
       this.#bus.once('error', (e) => {
-        const err = new ConnectionError(e.message)
-        resolve(err)
+        //inspect
+        if (e instanceof Error) {
+          const err = new ConnectionError(e.message)
+          resolve(err)
+        } else if ('undefined' !== typeof e) {
+          const err = new ConnectionError(inspect(e, false, 20, false))
+          resolve(err)
+        } else {
+          const err = new ConnectionError('An undefined error occured')
+          resolve(err)
+        }
       })
       this.#bus.once('close', () => {
         const err = new ConnectionError('Connection closed')
