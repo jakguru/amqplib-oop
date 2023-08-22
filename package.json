@@ -1,6 +1,6 @@
 {
   "name": "@jakguru/amqplib-oop",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "An Object-Oriented Wrapper around amqplib",
   "main": "dist/api.js",
   "scripts": {
