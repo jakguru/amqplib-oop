@@ -1,5 +1,6 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
+import { inspect } from 'util'
 import type { Connection } from './Connection'
 import type { Instrumentor } from './Instrumentation'
 export type { Channel, ConfirmChannel } from 'amqplib'
@@ -558,14 +559,30 @@ export class Queue {
   async #doWithErrorHandler(handle: Function) {
     const queueErrorPromise = new Promise((resolve) => {
       this.#bus.once('error', (e) => {
-        const err = new QueueError(e.message)
-        resolve(err)
+        if (e instanceof Error) {
+          const err = new QueueError(e.message)
+          resolve(err)
+        } else if ('undefined' !== typeof e) {
+          const err = new QueueError(inspect(e, false, 20, false))
+          resolve(err)
+        } else {
+          const err = new QueueError('An undefined error occured')
+          resolve(err)
+        }
       })
     })
     const connectionErrorPromise = new Promise((resolve) => {
       this.#client.$once('error', (e) => {
-        const err = new ConnectionError(e.message)
-        resolve(err)
+        if (e instanceof Error) {
+          const err = new ConnectionError(e.message)
+          resolve(err)
+        } else if ('undefined' !== typeof e) {
+          const err = new ConnectionError(inspect(e, false, 20, false))
+          resolve(err)
+        } else {
+          const err = new ConnectionError('An undefined error occured')
+          resolve(err)
+        }
       })
     })
     return await Promise.race([handle(), queueErrorPromise, connectionErrorPromise])
