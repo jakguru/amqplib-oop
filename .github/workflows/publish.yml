@@ -18,7 +18,7 @@ jobs:
           # Get the version from the release tag, stripping any non-numeric characters except for `.`
           VERSION=$(echo "${{ github.ref }}" | sed -e 's/[^0-9\.]//g')
           # Update the version in package.json
-          npm version --no-git-tag-version "$VERSION"
+          npm version --no-git-tag-version "$VERSION" --allow-same-version
       - run: npm publish --access=public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
