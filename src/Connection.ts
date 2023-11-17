@@ -476,6 +476,8 @@ export class Connection {
             throw error
           }
         }
+        // @ts-ignore - we're manually closing the stream because we don't want to wait
+        connection.stream?.end()
         this.#bus.emit('close')
         this.#active = false
         this.#closed = true
@@ -528,23 +530,35 @@ export class Connection {
     if (this.#active) {
       return
     }
+    const abortController = new AbortController()
+    let timeoutInstance: NodeJS.Timeout | undefined
     const promises: Array<Promise<Error | void>> = [
       new Promise((resolve) =>
-        setTimeout(
+      timeoutInstance = setTimeout(
           resolve.bind(null, new Error(`Connection timed out after ${timeout}ms`)),
           timeout
         )
       ),
-      new Promise((resolve) => this.#bus.once('connected', resolve.bind(null, void 0))),
-      new Promise((resolve) => this.#bus.once('unblocked', resolve.bind(null, void 0))),
-      new Promise((resolve) =>
+      new Promise((resolve) => {
+        this.#bus.once('connected', resolve.bind(null, void 0))
+        abortController.signal.addEventListener('abort', resolve.bind(null, new Error('Aborted')))
+      }),
+      new Promise((resolve) => {
+        this.#bus.once('unblocked', resolve.bind(null, void 0))
+        abortController.signal.addEventListener('abort', resolve.bind(null, new Error('Aborted')))
+      }),
+      new Promise((resolve) => {
         this.#bus.once('close', resolve.bind(null, new Error('Connection closed')))
-      ),
-      new Promise((resolve) =>
+        abortController.signal.addEventListener('abort', resolve.bind(null, new Error('Aborted')))
+      }),
+      new Promise((resolve) => {
         this.#bus.once('blocked', resolve.bind(null, new Error('Connection blocked')))
-      ),
+        abortController.signal.addEventListener('abort', resolve.bind(null, new Error('Aborted')))
+      }),
     ]
     const result = await Promise.race(promises)
+    abortController.abort()
+    clearTimeout(timeoutInstance)
     if (result instanceof Error) {
       throw result
     }

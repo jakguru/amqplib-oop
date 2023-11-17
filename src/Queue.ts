@@ -565,6 +565,7 @@ export class Queue {
   }
 
   async #doWithErrorHandler(handle: Function) {
+    const abortController = new AbortController()
     const queueErrorPromise = new Promise((resolve) => {
       this.#bus.once('error', (e) => {
         if (e instanceof Error) {
@@ -578,6 +579,7 @@ export class Queue {
           resolve(err)
         }
       })
+      abortController.signal.addEventListener('abort', resolve)
     })
     const connectionErrorPromise = new Promise((resolve) => {
       this.#client.$once('error', (e) => {
@@ -592,8 +594,11 @@ export class Queue {
           resolve(err)
         }
       })
+      abortController.signal.addEventListener('abort', resolve)
     })
-    return await Promise.race([handle(), queueErrorPromise, connectionErrorPromise])
+    const ret = await Promise.race([handle(), queueErrorPromise, connectionErrorPromise])
+    abortController.abort()
+    return ret
   }
 
   async #waitForTicksToFinish() {
@@ -636,24 +641,30 @@ export class Queue {
 
   async #waitForConfirmationsToProcessOrTimeout(timeout: number = 1000) {
     const abortController = new AbortController()
+    let timeoutInstance: NodeJS.Timeout | undefined
     await Promise.race([
       this.#waitForConfirmationsToProcess(abortController.signal),
       new Promise((resolve) => {
-        setTimeout(resolve, timeout)
+        timeoutInstance = setTimeout(resolve, timeout)
+        abortController.signal.addEventListener('abort', resolve)
       }),
     ])
     abortController.abort()
+    clearTimeout(timeoutInstance)
   }
 
   async #waitForPendingRPCMessagesToProcessOrTimeout(timeout: number = 1000) {
     const abortController = new AbortController()
+    let timeoutInstance: NodeJS.Timeout | undefined
     await Promise.race([
       this.#waitForPendingRPCMessagesToProcess(abortController.signal),
       new Promise((resolve) => {
-        setTimeout(resolve, timeout)
+        timeoutInstance = setTimeout(resolve, timeout)
+        abortController.signal.addEventListener('abort', resolve)
       }),
     ])
     abortController.abort()
+    clearTimeout(timeoutInstance)
   }
 }
 
