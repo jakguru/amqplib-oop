@@ -237,12 +237,14 @@ export class Queue {
    * Listens for messages on the queue, invoking the given listener function for each message received.
    * @param {QueueMessageListener} [listener] - The function to invoke for each message received.
    * @param {Partial<QueueListeningOptions>} [options] - The options to use when listening for messages.
+   * @param {AbortSignal} [abortSignal] - An optional abort signal that can be used to cancel the listener. @since 1.0.16
    * @throws {Error} - Throws an error if `noAck`, `ackOnNoAck`, and `nackOnNoAck` are all `false`.
    * @returns {Promise<void>} - A promise that resolves when the listener has been started.
    */
   public async listen(
     listener?: QueueMessageListener,
-    options?: Partial<QueueListeningOptions>
+    options?: Partial<QueueListeningOptions>,
+    abortSignal?: AbortSignal
   ): Promise<void> {
     return await this.#instrumentors.listen(async () => {
       const defaultOptions: QueueListeningOptions = {
@@ -271,6 +273,12 @@ export class Queue {
       await this.#waitForTicksToFinish()
       if (listener) {
         this.#bus.on('message', this.#handleListener.bind(this, listener))
+        if (abortSignal) {
+          abortSignal.addEventListener('abort', () => {
+            this.#bus.off('message', this.#handleListener.bind(this, listener))
+            this.#paused = true
+          })
+        }
       }
       if (this.#paused) {
         this.#paused = false
@@ -599,19 +607,27 @@ export class Queue {
     await Promise.all(promises)
   }
 
-  async #waitForConfirmationsToProcess() {
+  async #waitForConfirmationsToProcess(abortSignal: AbortSignal) {
+    let stop = false
+    abortSignal.addEventListener('abort', () => {
+      stop = true
+    })
     const getReallyUnconfirmed = () => {
       return this.#channel.unconfirmed.filter((cb) => cb !== null)
     }
-    while (getReallyUnconfirmed().length > 0) {
+    while (!stop && getReallyUnconfirmed().length > 0) {
       await new Promise((resolve) => {
         setTimeout(resolve, 100)
       })
     }
   }
 
-  async #waitForPendingRPCMessagesToProcess() {
-    while (this.#channel.pending.length > 0) {
+  async #waitForPendingRPCMessagesToProcess(abortSignal: AbortSignal) {
+    let stop = false
+    abortSignal.addEventListener('abort', () => {
+      stop = true
+    })
+    while (!stop && this.#channel.pending.length > 0) {
       await new Promise((resolve) => {
         setTimeout(resolve, 100)
       })
@@ -619,21 +635,25 @@ export class Queue {
   }
 
   async #waitForConfirmationsToProcessOrTimeout(timeout: number = 1000) {
+    const abortController = new AbortController()
     await Promise.race([
-      this.#waitForConfirmationsToProcess(),
+      this.#waitForConfirmationsToProcess(abortController.signal),
       new Promise((resolve) => {
         setTimeout(resolve, timeout)
       }),
     ])
+    abortController.abort()
   }
 
   async #waitForPendingRPCMessagesToProcessOrTimeout(timeout: number = 1000) {
+    const abortController = new AbortController()
     await Promise.race([
-      this.#waitForPendingRPCMessagesToProcess(),
+      this.#waitForPendingRPCMessagesToProcess(abortController.signal),
       new Promise((resolve) => {
         setTimeout(resolve, timeout)
       }),
     ])
+    abortController.abort()
   }
 }
 
