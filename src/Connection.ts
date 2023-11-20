@@ -502,7 +502,7 @@ export class Connection {
     this.#queues.forEach((queue) => {
       promises.push(this.#checkQueue.call(this, queue))
     })
-    return Object.assign({}, ...(await Promise.all(promises))) as ConnectionCheckResponse
+    return Object.assign({}, ...(await Promise.all(promises.map((p) => p.catch((e) => e))))) as ConnectionCheckResponse
   }
 
   /**
@@ -630,7 +630,7 @@ export class Connection {
     for (const connection of Connection.#connections) {
       promises.push(connection.close())
     }
-    await Promise.all(promises)
+    await Promise.all(promises.map((p) => p.catch(() => null)))
   }
 }
 

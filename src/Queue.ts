@@ -609,7 +609,7 @@ export class Queue {
     if (this.#lastTickPromise) {
       promises.push(this.#lastTickPromise)
     }
-    await Promise.all(promises)
+    await Promise.all(promises.map((p) => p.catch(() => null)))
   }
 
   async #waitForConfirmationsToProcess(abortSignal: AbortSignal) {
