@@ -158,6 +158,8 @@ test.group('source.Queue', (group) => {
     ])
     await received
     assert.equal(count, 5)
+    const res = await queue.check()
+    assert.equal(res.messageCount, 0)
   }).timeout(10000)
 
   /**
@@ -314,4 +316,33 @@ test.group('source.Queue', (group) => {
     const { messageCount } = await queue.check()
     assert.equal(messageCount, 45)
   }).timeout(5000)
+
+  test('can consume and ack messages via consumption, and then can stop when an abort signal is sent', async ({
+    assert,
+  }) => {
+    const queue = await connection.getQueue('test', { type: 'basic' })
+    queue.$on('error', console.error)
+    connection.$on('error', console.error)
+    assert.instanceOf(queue, Queue)
+    await queue.purge()
+    let passed = false
+    const abortController = new AbortController()
+    const received: Promise<void> = new Promise((resolve) => {
+      queue.consume(
+        (message, ack) => {
+          assert.equal(message.content.toString(), 'test')
+          passed = true
+          ack()
+          resolve()
+        },
+        {},
+        abortController.signal
+      )
+    })
+    const result = await queue.enqueue(Buffer.from('test'), { persistent: false })
+    assert.isNotNull(result)
+    await received
+    abortController.abort()
+    assert.isTrue(passed)
+  })
 })

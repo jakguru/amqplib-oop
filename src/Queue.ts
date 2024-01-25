@@ -1,6 +1,7 @@
 import amqplib from 'amqplib'
 import Emittery from 'eventemitter2'
 import { inspect } from 'util'
+import { v4 as uuidv4 } from 'uuid'
 import type { Connection } from './Connection'
 import type { Instrumentor } from './Instrumentation'
 export type { Channel, ConfirmChannel } from 'amqplib'
@@ -326,6 +327,91 @@ export class Queue {
    */
   public async awaitProcessingOfRPCs(timeout: number = 10000): Promise<void> {
     return await this.#waitForPendingRPCMessagesToProcessOrTimeout(timeout)
+  }
+
+  /**
+   * Consumes messages from the queue as quickly as possible, invoking the given listener function for each message received.
+   * @param {QueueMessageListener} [listener] - The function to invoke for each message received.
+   * @param {Partial<QueueConsumptionOptions>} [options] - The options to use when consuming messages.
+   * @param {AbortSignal} [abortSignal] - An optional abort signal that can be used to cancel the listener.
+   * @throws {Error} - Throws an error if `noAck`, `ackOnNoAck`, and `nackOnNoAck` are all `false`.
+   * @returns {Promise<void>} - A promise that resolves when the listener has been stopped.
+   */
+  public async consume(
+    listener: QueueMessageListener,
+    options?: Partial<QueueConsumptionOptions>,
+    abortSignal?: AbortSignal,
+    priority = 1,
+    additional: Record<string, any> = {}
+  ): Promise<void> {
+    if (priority <= 1) {
+      priority = 1
+    }
+    const defaultOptions: QueueConsumptionOptions = {
+      ackOnNoAck: false,
+      nackOnNoAck: true,
+      noAck: false,
+      requeueOnError: true,
+      requeueOnNoAck: true,
+    }
+    const mergedOptions = Object.assign({}, defaultOptions, options) as QueueListeningOptions
+    const { ackOnNoAck, nackOnNoAck, noAck, requeueOnError, requeueOnNoAck } = mergedOptions
+    if (false === noAck && false === ackOnNoAck && false === nackOnNoAck) {
+      throw new Error('noAck, ackOnNoAck and nackOnNoAck cannot all be false')
+    }
+    if (true === requeueOnNoAck && false === nackOnNoAck) {
+      process.emitWarning('requeueOnNoAck is ignored because nackOnNoAck is false')
+    }
+    const consumerTag = uuidv4()
+    abortSignal?.addEventListener('abort', () => {
+      this.#channel.cancel(consumerTag)
+    })
+    await this.#channel.consume(
+      this.#name,
+      async (message) => {
+        if (!message) {
+          return
+        }
+        let responded = false
+        const messageBus = new Emittery()
+        const sendAck = this.ack.bind(this, message)
+        const sendNack = this.nack.bind(this, message)
+        messageBus.on('ack', (args) => {
+          if (!responded && !this.#noAck) {
+            responded = true
+            sendAck(...args)
+          }
+        })
+        messageBus.on('nack', (args) => {
+          if (!responded && !this.#noAck) {
+            responded = true
+            sendNack(...args)
+          }
+        })
+        const ack = (allUpTo?: boolean) => {
+          messageBus.emit('ack', [allUpTo])
+        }
+        const nack = (requeue?: boolean, allUpTo?: boolean) => {
+          messageBus.emit('nack', [requeue, allUpTo])
+        }
+        try {
+          await listener.apply(null, [message, ack, nack])
+        } catch (error) {
+          this.#bus.emit('error', error)
+          if (requeueOnError) {
+            nack(true)
+          }
+        }
+        if (!responded && !noAck) {
+          if (ackOnNoAck) {
+            ack()
+          } else if (nackOnNoAck) {
+            nack(requeueOnNoAck)
+          }
+        }
+      },
+      { consumerTag, priority, arguments: additional, noAck }
+    )
   }
 
   /**
@@ -1050,6 +1136,13 @@ export interface QueueListeningOptions {
    */
   noAck: boolean
 }
+
+/**
+ * Options for consuming messages from a queue.
+ * @interface QueueConsumptionOptions
+ * @extends {QueueListeningOptions}
+ */
+type QueueConsumptionOptions = Omit<QueueListeningOptions, 'blocking'>
 
 /**
  * An object representing a message fetched from a queue, along with the functions to acknowledge or negatively acknowledge its processing.
